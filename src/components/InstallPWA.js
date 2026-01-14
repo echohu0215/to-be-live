@@ -42,6 +42,10 @@ export function InstallPWA() {
     }
   }
 
+  const handleClose = () => {
+    setIsVisible(false)
+  }
+
   if (!isVisible) return null
 
   return (
@@ -51,7 +55,12 @@ export function InstallPWA() {
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 100, opacity: 0 }}
         className="fixed bottom-24 left-6 right-6 z-[60] bg-app-card border border-app-accent/30 p-4 rounded-2xl shadow-2xl"
+        onClick={handleClose} // 点击整个容器关闭
       >
+        <motion.div 
+          className="bg-app-card border border-app-accent/30 p-4 rounded-2xl shadow-2xl"
+          onClick={(e) => e.stopPropagation()} // 阻止事件冒泡，点击内部内容不关闭
+        >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-app-accent/10 p-2 rounded-lg">
@@ -65,8 +74,13 @@ export function InstallPWA() {
 
           {isIOS ? (
             // iOS 手动引导提示
-            <div className="flex items-center gap-1 text-[10px] bg-app-bg px-3 py-2 rounded-xl border border-app-border">
-              点击 <Share size={12} /> 然后 <PlusSquare size={12} /> "添加到主屏幕"
+            <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-1 text-[10px] bg-app-bg px-3 py-2 rounded-xl border border-app-border">
+                <span>必须使用 Safari 浏览器打开</span>
+                </div>
+                <div className="flex items-center gap-1 text-[10px] bg-app-bg px-3 py-2 rounded-xl border border-app-border">
+                点击 <Share size={12} /> 然后 <PlusSquare size={12} /> "添加到主屏幕"
+                </div>
             </div>
           ) : (
             // Android/Chrome 自动安装按钮
@@ -78,6 +92,7 @@ export function InstallPWA() {
             </button>
           )}
         </div>
+        </motion.div>
       </motion.div>
     </AnimatePresence>
   )
