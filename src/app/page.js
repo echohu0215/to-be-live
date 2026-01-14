@@ -151,7 +151,6 @@ export default function ToBeLiveApp() {
           <motion.button
             whileTap={{ scale: 0.94 }}
             onClick={handleCheckIn}
-            // 增加 shadow-xl 让它在白昼模式下有悬浮感，dark 模式下取消阴影保持纯粹
             className="absolute inset-4 rounded-[4.5rem] bg-app-card border border-app-border flex flex-col items-center justify-center 
                       shadow-[0_15px_40px_rgba(0,0,0,0.04)] dark:shadow-none"
           >
@@ -161,7 +160,6 @@ export default function ToBeLiveApp() {
               ) : (
                 <Shield 
                   size={60} 
-                  // 关键：白昼模式下使用深绿色填充，并降低透明度
                   fill="currentColor" 
                   fillOpacity={0.12} 
                   className="drop-shadow-[0_4px_12px_rgba(0,0,0,0.05)] dark:drop-shadow-none"

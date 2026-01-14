@@ -87,10 +87,10 @@ export default function LoginPage() {
             {/* 邮箱输入 */}
             <div className="relative group">
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 
-      transition-all duration-300
-      text-app-text opacity-20 
-      group-focus-within:opacity-100 
-      group-focus-within:text-app-accent" size={18} />
+                transition-all duration-300
+                text-app-text opacity-20 
+                group-focus-within:opacity-100 
+                group-focus-within:text-app-accent" size={18} />
               <input 
                 type="email" 
                 required
