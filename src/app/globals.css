@@ -19,13 +19,13 @@
 }
 
 .dark {
-  /* 暗黑模式：经典的科技荧光绿 */
-  --app-bg: #09090b;
-  --app-card: #141417;
-  --app-text: #fafafa;
-  --app-border: #27272a;
-  --app-accent: #22c55e;
-  --app-accent-soft: rgba(34, 197, 94, 0.1);
+  /* 暗黑模式：柔和深灰蓝，减少眼部疲劳 */
+  --app-bg: #0f1115;      /* 柔和深灰蓝色，比原色更温和 */
+  --app-card: #1a1d23;    /* 对应的卡片背景 */
+  --app-text: #f0f0f2;    /* 略微柔和的文字色 */
+  --app-border: #2d323a;  /* 协调的边框色 */
+  --app-accent: #34d399;  /* 温和的青绿色强调色 */
+  --app-accent-soft: rgba(52, 211, 153, 0.1);
 }
 
 body {
