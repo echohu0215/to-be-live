@@ -18,12 +18,14 @@ export async function GET(request) {
   }
 
   try {
-    // 2. 核心逻辑：查询超过 48 小时未签到且状态未报警的用户
-    // 假设我们在 profiles 表增加了一个字段 status (default: 'safe')
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    // 2. 筛选：失联超过48小时 且 尚未发送过告警 (is_alerted = false)
     const { data: riskyUsers, error } = await supabaseAdmin
       .from('profiles')
       .select('id, email, emergency_email, last_check_in')
-      .lt('last_check_in', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString());
+      .lt('last_check_in', fortyEightHoursAgo)
+      .eq('is_alerted', false) // 极其重要：防止重复骚扰
+      .not('emergency_email', 'is', null);
 
     if (error) throw error;
     if (!riskyUsers || riskyUsers.length === 0) {
@@ -36,7 +38,7 @@ export async function GET(request) {
         if (!user.emergency_email) return null;
 
         const { error: mailError } = await resend.emails.send({
-          from: '守护者 <guardian@yourdomain.com>',
+          from: '守护者 <guardian@send.to-be-live.me>',
           to: user.emergency_email,
           subject: `【紧急提醒】您的好友 ${user.email} 已失联`,
           html: `
@@ -47,12 +49,24 @@ export async function GET(request) {
               <p>其最后一次活跃时间为：${new Date(user.last_check_in).toLocaleString()}</p>
               <hr />
               <p style="color: #e11d48;"><strong>建议操作：</strong> 请立即尝试通过电话或上门方式确认其安全状态。</p>
-              <p style="font-size: 12px; color: #999; margin-top: 40px;">这是由 DIED LE ME 自动发出的安全预警。</p>
+              <p style="font-size: 12px; color: #999; margin-top: 40px;">这是由 TO BE LIVE 自动发出的安全预警。</p>
             </div>
           `
         });
 
-        return mailError ? { id: user.id, status: 'failed' } : { id: user.id, status: 'sent' };
+        if (mailError) {
+          console.error(`邮件发送失败给 ${user.email}:`, mailError);
+          return { id: user.id, status: 'failed', error: mailError };
+        }
+
+        // 3. 发送成功后立即更新数据库标记
+        await supabaseAdmin
+          .from('profiles')
+          .update({ is_alerted: true })
+          .eq('id', user.id);
+
+        return { id: user.id, status: 'sent', messageId: data.id };
+
       })
     );
 

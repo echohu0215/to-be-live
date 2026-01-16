@@ -6,6 +6,7 @@ import { Mail, Lock, Loader2, ArrowRight, ShieldCheck } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from "@/lib/supabase";
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { toast } from 'sonner';
 
 export default function LoginPage() {
   const router = useRouter()
@@ -32,10 +33,10 @@ export default function LoginPage() {
       } else {
         const { error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
-        alert('验证邮件已发送，请查收！')
+        toast.success('验证邮件已发送，请查收！')
       }
     } catch (err) {
-      alert(err.message)
+      toast.error(err.message)
     } finally {
       setLoading(false)
     }
