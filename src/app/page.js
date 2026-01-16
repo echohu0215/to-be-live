@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Clock
 } from "lucide-react";
+import { toast } from 'sonner';
 
 export default function ToBeLiveApp() {
   const [supabase] = useState(() => createClient());
@@ -26,6 +27,7 @@ export default function ToBeLiveApp() {
   const [newEmail, setNewEmail] = useState("");
   const [timeLeft, setTimeLeft] = useState({ h: 48, m: 0, s: 0, percent: 100 })
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isCheckingIn, setIsCheckingIn] = useState(false); // 专门用于签到按钮
 
   useEffect(() => {
     const fetchData = async () => {
@@ -50,7 +52,7 @@ export default function ToBeLiveApp() {
 
   const updateEmergencyEmail = async () => {
     if (!newEmail.includes("@")) {
-      alert("请输入有效的邮箱地址");
+      toast.warning("格式错误", { description: "请输入有效的邮箱地址" });
       return;
     }
     setIsUpdating(true);
@@ -59,7 +61,7 @@ export default function ToBeLiveApp() {
       setProfile({ ...profile, emergency_email: newEmail });
       setIsSettingsOpen(false);
     } else {
-      alert("更新失败");
+      toast.error("更新失败");
     }
     setIsUpdating(false);
   };
@@ -84,14 +86,40 @@ export default function ToBeLiveApp() {
   }, [updateCountdown]);
 
   const handleCheckIn = async () => {
-    if (!user) return;
+    if (!user || isCheckingIn) return; // 使用专属的 loading
+    
+    setIsCheckingIn(true);
     const now = new Date().toISOString();
-    const { error } = await supabase.from("profiles").update({ last_check_in: now }).eq("id", user.id);
-    if (!error) {
-      setProfile((prev) => ({ ...prev, last_check_in: now }));
-      if ("vibrate" in navigator) navigator.vibrate([50, 30, 50]);
+    
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ 
+          last_check_in: now,
+          is_alerted: false 
+        })
+        .eq('id', user.id);
+
+      if (!error) {
+        setProfile((prev) => ({ ...prev, last_check_in: now, is_alerted: false }));
+        if ("vibrate" in navigator) navigator.vibrate([50, 30, 50]);
+
+        toast.success("生命体征已确认", {
+          description: "守护倒计时已重置",
+          duration: 3000,
+        });
+      } else {
+        throw error;
+      }
+    } catch (err) {
+      console.error("签到失败:", err.message);
+      toast.error("签到失败", {
+        description: "请检查网络连接后重试"
+      });
+    } finally {
+      setIsCheckingIn(false); // 释放专属 loading
     }
-  };
+};
 
   // 动态获取当前的强调色（预警系统）
   const getAlertColorClass = () => {
@@ -129,20 +157,32 @@ export default function ToBeLiveApp() {
         {/* 圆环进度按钮 */}
         <div className="relative mb-12">
           <svg className="w-80 h-80 -rotate-90">
+            {/* 底层阴影环 */}
             <circle
               cx="160" cy="160" r="140"
               fill="transparent"
               stroke="currentColor"
-              strokeWidth="6" // 稍微减细，显得更精致
+              strokeWidth="6"
               className="text-app-border opacity-60 dark:opacity-30" 
             />
+            
+            {/* 动态进度环 */}
             <motion.circle
               cx="160" cy="160" r="140"
               fill="transparent"
               stroke="currentColor"
               strokeWidth="7"
               strokeDasharray="880"
-              animate={{ strokeDashoffset: 880 - (880 * timeLeft.percent) / 100 }}
+              // 当签到中时，圆环产生一种“扫描”或“充能”的呼吸效果
+              animate={{ 
+                strokeDashoffset: isCheckingIn ? [880, 440, 880] : (880 - (880 * timeLeft.percent) / 100),
+                opacity: isCheckingIn ? [0.4, 1, 0.4] : 1
+              }}
+              transition={{
+                duration: isCheckingIn ? 1.5 : 0.5,
+                repeat: isCheckingIn ? Infinity : 0,
+                ease: "easeInOut"
+              }}
               className={`${getAlertColorClass()} transition-colors duration-1000`}
               strokeLinecap="round"
             />
@@ -150,26 +190,48 @@ export default function ToBeLiveApp() {
 
           <motion.button
             whileTap={{ scale: 0.94 }}
+            disabled={isCheckingIn}
             onClick={handleCheckIn}
-            // 增加 shadow-xl 让它在白昼模式下有悬浮感，dark 模式下取消阴影保持纯粹
             className="absolute inset-4 rounded-[4.5rem] bg-app-card border border-app-border flex flex-col items-center justify-center 
-                      shadow-[0_15px_40px_rgba(0,0,0,0.04)] dark:shadow-none"
+                      shadow-[0_15px_40px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden"
           >
-            <div className={`mb-4 transition-colors duration-1000 ${getAlertColorClass()}`}>
+            {/* 签到时的遮罩层，增加“同步中”的朦胧感 */}
+            <AnimatePresence>
+              {isCheckingIn && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 bg-app-accent/5 backdrop-blur-[2px] z-10 flex items-center justify-center"
+                >
+                  <Loader2 className="animate-spin text-app-accent" size={32} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* 图标区域：签到时缩小并变淡 */}
+            <motion.div 
+              animate={{ 
+                scale: isCheckingIn ? 0.8 : 1,
+                opacity: isCheckingIn ? 0.3 : 1 
+              }}
+              className={`mb-4 transition-colors duration-1000 ${getAlertColorClass()}`}
+            >
               {timeLeft.h < 8 ? (
                 <AlertTriangle size={60} />
               ) : (
                 <Shield 
                   size={60} 
-                  // 关键：白昼模式下使用深绿色填充，并降低透明度
                   fill="currentColor" 
                   fillOpacity={0.12} 
-                  className="drop-shadow-[0_4px_12px_rgba(0,0,0,0.05)] dark:drop-shadow-none"
+                  className="drop-shadow-[0_4px_12px_rgba(0,0,0,0.05)]"
                 />
               )}
-            </div>
+            </motion.div>
             
-            <span className="text-2xl font-black tracking-tight text-app-text">我还活着</span>
+            <span className="text-2xl font-black tracking-tight text-app-text">
+              {isCheckingIn ? "同步中..." : "我还活着"}
+            </span>
             
             <div className="mt-2 font-mono text-[11px] opacity-40 flex items-center gap-1.5 tracking-widest">
               <Clock size={12} strokeWidth={2.5} />
