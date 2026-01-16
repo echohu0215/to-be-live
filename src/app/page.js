@@ -22,10 +22,11 @@ export default function ToBeLiveApp() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [thresholdHours, setThresholdHours] = useState(40);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [newEmail, setNewEmail] = useState("");
-  const [timeLeft, setTimeLeft] = useState({ h: 48, m: 0, s: 0, percent: 100 })
+  const [timeLeft, setTimeLeft] = useState({ h: thresholdHours, m: 0, s: 0, percent: 100 })
   const [isUpdating, setIsUpdating] = useState(false);
   const [isCheckingIn, setIsCheckingIn] = useState(false); // 专门用于签到按钮
 
@@ -70,7 +71,7 @@ export default function ToBeLiveApp() {
     if (!profile?.last_check_in) return;
     const last = new Date(profile.last_check_in).getTime();
     const now = new Date().getTime();
-    const total = 48 * 60 * 60 * 1000;
+    const total = thresholdHours * 60 * 60 * 1000;
     const remaining = Math.max(0, total - (now - last));
     setTimeLeft({
       h: Math.floor(remaining / (1000 * 60 * 60)),
@@ -78,9 +79,11 @@ export default function ToBeLiveApp() {
       s: Math.floor((remaining % (1000 * 60)) / 1000),
       percent: (remaining / total) * 100
     });
-  }, [profile]);
+  }, [profile, thresholdHours]);
 
   useEffect(() => {
+    // 初始先跑一次，避免等待 1 秒才显示正确数值
+    updateCountdown();
     const timer = setInterval(updateCountdown, 1000);
     return () => clearInterval(timer);
   }, [updateCountdown]);
@@ -123,6 +126,8 @@ export default function ToBeLiveApp() {
 
   // 动态获取当前的强调色（预警系统）
   const getAlertColorClass = () => {
+    // 如果还没加载完或者没打卡，显示默认色
+    if (!profile?.last_check_in) return "text-app-accent";
     if (timeLeft.h < 8) return "text-red-500";
     if (timeLeft.h < 24) return "text-amber-500";
     return "text-app-accent"; // 使用主题定义的强调色
@@ -295,7 +300,7 @@ export default function ToBeLiveApp() {
                   <X size={20} />
                 </button>
               </div>
-              <p className="opacity-60 text-sm mb-6">当您超过 48 小时未签到，系统将发送求助信息。</p>
+              <p className="opacity-60 text-sm mb-6">当您超过 {thresholdHours} 小时未签到，系统将发送求助信息。</p>
 
               <div className="space-y-4">
                 <div className="relative">

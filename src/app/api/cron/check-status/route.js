@@ -18,12 +18,14 @@ export async function GET(request) {
   }
 
   try {
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    // 2. 筛选：失联超过48小时 且 尚未发送过告警 (is_alerted = false)
+    // 改为 40 小时，确保“两天未打卡”在每天早上的巡检中能被捕捉到
+    const thresholdHours = 40; 
+    const thresholdTime = new Date(Date.now() - thresholdHours * 60 * 60 * 1000).toISOString();
+    // 2. 筛选：失联超过40小时 且 尚未发送过告警 (is_alerted = false)
     const { data: riskyUsers, error } = await supabaseAdmin
       .from('profiles')
       .select('id, email, emergency_email, last_check_in')
-      .lt('last_check_in', fortyEightHoursAgo)
+      .lt('last_check_in', thresholdTime)
       .eq('is_alerted', false) // 极其重要：防止重复骚扰
       .not('emergency_email', 'is', null);
 
@@ -45,7 +47,7 @@ export async function GET(request) {
             <div style="font-family: sans-serif; padding: 20px; color: #333;">
               <h2>紧急安全通知</h2>
               <p>您好，</p>
-              <p>系统检测到您的好友 <strong>${user.email}</strong> 已经连续超过 48 小时未在“死了么”App 进行安全签到。</p>
+              <p>系统检测到您的好友 <strong>${user.email}</strong> 已经连续超过 ${thresholdHours} 小时未在“死了么”App 进行安全签到。</p>
               <p>其最后一次活跃时间为：${new Date(user.last_check_in).toLocaleString()}</p>
               <hr />
               <p style="color: #e11d48;"><strong>建议操作：</strong> 请立即尝试通过电话或上门方式确认其安全状态。</p>
