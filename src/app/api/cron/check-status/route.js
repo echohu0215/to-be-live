@@ -4,81 +4,96 @@ import { NextResponse } from 'next/server';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// 初始化具有管理员权限的 Supabase 客户端
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY // 使用 Service Role Key
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// 定义延时函数，用于规避 Resend 每秒 2 封的限制
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function GET(request) {
-  // 1. 安全校验：验证是否为合法的 Vercel Cron 请求
+  // 1. 安全校验
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new Response('Unauthorized', { status: 401 });
   }
 
   try {
-    // 改为 40 小时，确保“两天未打卡”在每天早上的巡检中能被捕捉到
-    const thresholdHours = 40; 
-    const thresholdTime = new Date(Date.now() - thresholdHours * 60 * 60 * 1000).toISOString();
-    // 2. 筛选：失联超过40小时 且 尚未发送过告警 (is_alerted = false)
-    const { data: riskyUsers, error } = await supabaseAdmin
+    // 2. 获取所有待检查用户（包含自定义周期字段）
+    const { data: allUsers, error } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, emergency_email, last_check_in')
-      .lt('last_check_in', thresholdTime)
-      .eq('is_alerted', false) // 极其重要：防止重复骚扰
+      .select('id, email, emergency_email, last_check_in, check_interval_hours')
+      .eq('is_alerted', false)
       .not('emergency_email', 'is', null);
 
     if (error) throw error;
-    if (!riskyUsers || riskyUsers.length === 0) {
+
+    // 3. 在内存中筛选真正“失联”的用户
+    const now = Date.now();
+    const riskyUsers = (allUsers || []).filter(user => {
+      const interval = (user.check_interval_hours || 40) * 60 * 60 * 1000;
+      const lastCheckIn = new Date(user.last_check_in).getTime();
+      return (now - lastCheckIn) > interval;
+    });
+
+    if (riskyUsers.length === 0) {
       return NextResponse.json({ message: '目前所有效用户均安全' });
     }
 
-    // 3. 遍历发送报警邮件
-    const results = await Promise.all(
-      riskyUsers.map(async (user) => {
-        if (!user.emergency_email) return null;
+    const results = [];
 
-        const { error: mailError } = await resend.emails.send({
-          from: '守护者 <guardian@send.to-be-live.me>',
+    // 4. 串行发送邮件，防止触发 Rate Limit (429)
+    for (const user of riskyUsers) {
+      try {
+        const { data: mailData, error: mailError } = await resend.emails.send({
+          // 重要：改为你 Resend 验证成功的根域名
+          from: 'TO BE LIVE <guardian@to-be-live.me>', 
           to: user.emergency_email,
-          subject: `【紧急提醒】您的好友 ${user.email} 已失联`,
+          subject: `【紧急提醒】您的好友 ${user.email} 可能失联`,
           html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-              <h2>紧急安全通知</h2>
+            <div style="font-family: sans-serif; padding: 20px; color: #333; border: 1px solid #eee; border-radius: 10px;">
+              <h2 style="color: #e11d48;">紧急安全预警</h2>
               <p>您好，</p>
-              <p>系统检测到您的好友 <strong>${user.email}</strong> 已经连续超过 ${thresholdHours} 小时未在“死了么”App 进行安全签到。</p>
-              <p>其最后一次活跃时间为：${new Date(user.last_check_in).toLocaleString()}</p>
-              <hr />
-              <p style="color: #e11d48;"><strong>建议操作：</strong> 请立即尝试通过电话或上门方式确认其安全状态。</p>
-              <p style="font-size: 12px; color: #999; margin-top: 40px;">这是由 TO BE LIVE 自动发出的安全预警。</p>
+              <p>系统检测到您的好友 <strong>${user.email}</strong> 已超过其设定的安全周期未进行活跃签到。</p>
+              <p>其最后活跃时间为：<strong>${new Date(user.last_check_in).toLocaleString()}</strong></p>
+              <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+              <p style="background: #fff1f2; padding: 15px; border-radius: 8px; color: #be123c;">
+                <strong>建议操作：</strong> 请立即尝试联系该好友，确认其当前安全状况。
+              </p>
+              <p style="font-size: 11px; color: #999; margin-top: 30px;">
+                此邮件由 TO BE LIVE (to-be-live.me) 自动发出。
+              </p>
             </div>
           `
         });
 
         if (mailError) {
-          console.error(`邮件发送失败给 ${user.email}:`, mailError);
-          return { id: user.id, status: 'failed', error: mailError };
+          results.push({ id: user.id, status: 'failed', error: mailError });
+        } else {
+          // 发送成功后更新数据库
+          await supabaseAdmin
+            .from('profiles')
+            .update({ is_alerted: true })
+            .eq('id', user.id);
+          
+          results.push({ id: user.id, status: 'sent', messageId: mailData.id });
         }
+      } catch (innerErr) {
+        results.push({ id: user.id, status: 'error', message: innerErr.message });
+      }
 
-        // 3. 发送成功后立即更新数据库标记
-        await supabaseAdmin
-          .from('profiles')
-          .update({ is_alerted: true })
-          .eq('id', user.id);
-
-        return { id: user.id, status: 'sent', messageId: data.id };
-
-      })
-    );
+      // 关键：每处理完一个用户，暂停 600 毫秒，确保每秒发信不超过 2 封
+      await delay(600);
+    }
 
     return NextResponse.json({ 
-      processedCount: riskyUsers.length,
+      totalProcessed: riskyUsers.length,
       details: results 
     });
 
   } catch (err) {
-    console.error('Cron Error:', err);
+    console.error('Cron Global Error:', err);
     return new Response(err.message, { status: 500 });
   }
 }
